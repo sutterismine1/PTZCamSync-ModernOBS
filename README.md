@@ -29,4 +29,4 @@ Follow your user manual on how to configure your PTZ Optics Camera and set prese
 
 ### Configure the program
 
-See the [configuration guide](CONFIGURATION.md) where it shows you how to configure your settings for the program. Note that the built-in WebSocket tool might give you a random password so make sure you follow the steps in [### Configure OBS] and modify the password field in settings.json
+See the [configuration guide](CONFIGURATION.md) where it shows you how to configure your settings for the program. Note that the built-in WebSocket tool might give you a random password so make sure you follow the steps above and modify the password field in settings.json
