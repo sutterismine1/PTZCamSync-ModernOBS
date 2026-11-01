@@ -7,7 +7,7 @@ import sys
 from functools import partial
 from tkinter import Button, Frame, Label, Menu, Tk, font, messagebox
 
-from obswebsocket import events, exceptions, obsws, requests
+from obsws_python import ReqClient, EventClient, events
 
 from ptz_visca_commands import PTZViscaCommands
 
@@ -30,9 +30,9 @@ class OBSWebsocketHandler:
         print("Trying to connect to OBS...")
         # Setup a websocket connection to OBS
         try:
-            self.ws = obsws(host, port, password)
-            self.ws.connect()
-        except exceptions.ConnectionFailure:
+            self.ws = ReqClient(host=host, port=port, password=password, timeout=5)
+            self.event_client = EventClient(host=host, port=port, password=password, timeout=5)
+        except ConnectionRefusedError:
             print("Connection was unsuccessful")
             messagebox.showerror("Error", "OBS Must be open in order to use this application")
 
@@ -40,13 +40,19 @@ class OBSWebsocketHandler:
         self.scenes = self._get_scenes()
 
     def _get_scenes(self):
-        return self.ws.call(requests.GetSceneList()).getScenes()
+        return self.ws.get_scene_list().scenes
 
     def change_scene(self, name):
         """Changes the current OBS scene"""
-        self.ws.call(requests.SetCurrentScene(name))
-
-
+        self.ws.set_current_program_scene(name)
+        
+    def toggle_stream(self):
+        """Toggles the stream on/off"""
+        self.ws.toggle_stream()
+    
+    def toggle_recording(self):
+        """Toggles the recording on/off"""
+        self.ws.toggle_record()
 class PTZCamSync:
     """Class that handles the general program logic"""
     def __init__(self):
@@ -57,20 +63,21 @@ class PTZCamSync:
         self.stream_health = self.settings.get("stream_health") or False
 
         # Connect to obs and collect scenes
-        self.ws_handler = OBSWebsocketHandler("127.0.0.1", 4444, self.settings["password"])
+        self.ws_handler = OBSWebsocketHandler("127.0.0.1", 4455, self.settings["password"])
         self.ws = self.ws_handler.ws
-        self.obs_scenes = [x["name"] for x in self.ws_handler.scenes]
-
+        self.event_client = self.ws_handler.event_client
+        self.obs_scenes = [x["sceneName"] for x in self.ws_handler.scenes]
+        
         if self.stream_health:
-            print("Starting stream health log")
+            print("Stream health logging is currently only logging when state changes. This is due to the StreamStatus event being removed from OBS WebSocket v5")
             # Add a event handler for the stream status to log info about it.
-            self.ws.register(self.stream_status, event=events.StreamStatus)
+            self.event_client.callback.register(self.on_stream_state_changed)
             log_name = os.path.join(__location__, "logs", "Stream Health - " + datetime.datetime.now().strftime("%d-%m-%Y %H-%M-%S") + ".csv")
             if not os.path.exists(os.path.join(__location__, "logs")):
                 os.mkdir(os.path.join(__location__, "logs"))
             
             # Set the fields and write the header to the stream health file
-            fields = ["time", "streaming", "recording", "stream_len", "drop_perc", "total_drop", "bitrate"]
+            fields = ["time", "streaming", "recording", "stream_len", "congestion", "bytes", "skipped", "total_frames"]
             self.csv_file = open(log_name, "w+", newline="")
             self.csv_writer = csv.DictWriter(self.csv_file, fieldnames=fields)
             self.csv_writer.writeheader()
@@ -78,17 +85,23 @@ class PTZCamSync:
 
         # The port for camera control
         self.udp_port = 1259
+        
+    def on_stream_state_changed(self, message):
+        """Callback for when the stream state changes. Logs the stream health to a CSV file"""
+        message = self.ws.get_stream_status()
+        self.stream_status(message)
     
     def stream_status(self, message):
         if self.stream_health:
             row = {
                 "time": datetime.datetime.now().strftime("%H:%M:%S"),
-                "streaming": message.getStreaming(),
-                "recording": message.getRecording(),
-                "stream_len": datetime.timedelta(seconds=message.getTotalStreamTime()),
-                "drop_perc": message.getStrain(),
-                "total_drop": message.getNumDroppedFrames(),
-                "bitrate": message.getKbitsPerSec()
+                "streaming": message.output_active,
+                "recording": self.ws.get_record_status().output_active,
+                "stream_len": message.output_duration,
+                "congestion": message.output_congestion,
+                "bytes": message.output_bytes,
+                "skipped": message.output_skipped_frames,
+                "total_frames": message.output_total_frames
             }
             self.csv_writer.writerow(row)
             self.csv_file.flush()
@@ -210,8 +223,8 @@ class MainPTZWindow(Frame):
     
     def toggle_stream(self):
         # Toggle the stream and recording
-        self.cam_sync.ws.call(requests.StartStopRecording())
-        self.cam_sync.ws.call(requests.StartStopStreaming())
+        self.cam_sync.ws_handler.toggle_stream()
+        self.cam_sync.ws_handler.toggle_recording()
 
 
 if __name__ == "__main__":
