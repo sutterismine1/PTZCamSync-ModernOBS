@@ -1,6 +1,6 @@
 # PTZCamSync
 
-A simple application that allows users to manage [PTZ Optics](https://ptzoptics.com/) cameras and [OBS Studio](https://obsproject.com/) scene switching with a simple click of a button. This is a fork of Column01's program to get it to work with modern OBS Studio versions
+A simple application that allows users to manage [PTZ Optics](https://ptzoptics.com/) cameras and [OBS Studio](https://obsproject.com/) scene switching with a simple click of a button. This is a fork of [Column01](https://github.com/column01)'s program to get it to work with modern OBS Studio versions
 
 ## Setup
 
